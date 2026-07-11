@@ -1,0 +1,6 @@
+{
+  "name": "StudyStreak",
+  "description": "A comprehensive study tracker, planner, and consistency application to build study habits through streaks, statistics, and badges.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

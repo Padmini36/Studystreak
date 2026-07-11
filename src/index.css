@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@1,400;1,600;1,700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-serif: "Playfair Display", Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Base style resets */
+body {
+  font-family: var(--font-sans);
+  background-color: #F9F9F7;
+  color: #1A1A1A;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.dark body {
+  background-color: #141414;
+  color: #F9F9F7;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Calendar intensity classes */
+.cal-high {
+  background-color: #10b981 !important; /* Emerald Green */
+  color: white !important;
+}
+.cal-mid {
+  background-color: #eab308 !important; /* Yellow */
+  color: black !important;
+}
+.cal-low {
+  background-color: #f59e0b !important; /* Amber */
+  color: black !important;
+}
+.cal-none {
+  background-color: #e5e7eb !important; /* Default gray/surface color */
+  color: #374151 !important;
+}
+.dark .cal-none {
+  background-color: #2a2a2a !important;
+  color: #d1d5db !important;
+}
