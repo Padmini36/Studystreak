@@ -127,6 +127,8 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [showOtpStep, setShowOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
 
   // App core state
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -470,17 +472,7 @@ export default function App() {
     try {
       if (isUsingFallback || SUPABASE_URL.includes('placeholder-project')) {
         await new Promise(resolve => setTimeout(resolve, 300));
-        setToken('demo-token');
-        setUser({
-          id: 'demo-user-id',
-          email: authEmail,
-          name: authName,
-          currentStreak: 0,
-          longestStreak: 0,
-          profilePicture: '🦉'
-        });
-        setActiveTab('dashboard');
-        loadFallbackTelemetry();
+        setShowOtpStep(true);
         return;
       }
 
@@ -494,24 +486,72 @@ export default function App() {
         }
       });
       if (error) throw error;
-      setActiveTab('dashboard');
+      setShowOtpStep(true);
     } catch (err: any) {
       if (err.message?.includes('fetch') || err.message?.includes('NetworkError')) {
         setIsUsingFallback(true);
+        setShowOtpStep(true);
+      } else {
+        setAuthError(err.message || 'Error registering account.');
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // REQUIREMENT: Handle OTP submission using supabase.auth.verifyOtp()
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setAuthError('Please enter a valid 6-digit OTP code.');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      if (isUsingFallback || SUPABASE_URL.includes('placeholder-project')) {
+        await new Promise(resolve => setTimeout(resolve, 300));
         setToken('demo-token');
         setUser({
           id: 'demo-user-id',
           email: authEmail,
-          name: authName,
+          name: authName || authEmail.split('@')[0],
           currentStreak: 0,
           longestStreak: 0,
           profilePicture: '🦉'
         });
         setActiveTab('dashboard');
         loadFallbackTelemetry();
-      } else {
-        setAuthError(err.message || 'Error registering account.');
+        setShowOtpStep(false);
+        setOtpCode('');
+        return;
       }
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: authEmail,
+        token: otpCode,
+        type: 'signup'
+      });
+      if (error) throw error;
+
+      if (data.session) {
+        setToken(data.session.access_token);
+        const name = data.session.user.user_metadata?.full_name || data.session.user.user_metadata?.name || authName || 'Student';
+        setUser({
+          id: data.session.user.id,
+          email: data.session.user.email || '',
+          name: name,
+          currentStreak: 0,
+          longestStreak: 0,
+          profilePicture: '🦉'
+        });
+      }
+      setActiveTab('dashboard');
+      setShowOtpStep(false);
+      setOtpCode('');
+    } catch (err: any) {
+      setAuthError(err.message || 'Verification failed. Please check the code and try again.');
     } finally {
       setAuthLoading(false);
     }
@@ -534,6 +574,8 @@ export default function App() {
     setAuthPassword('');
     setAuthName('');
     setAuthError('');
+    setShowOtpStep(false);
+    setOtpCode('');
   };
 
   // STUDY SESSIONS CRUD with automatic duration_minutes calculation
@@ -917,107 +959,168 @@ export default function App() {
             </button>
 
             <div className="w-full max-w-sm space-y-6">
-              <div className="text-center space-y-1">
-                <h2 className="font-display text-2xl font-black text-stone-900 dark:text-stone-50">
-                  {authMode === 'login' ? 'Welcome Back!' : 'Create Your Account'}
-                </h2>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  {authMode === 'login' 
-                    ? 'Enter your student credentials to log in.' 
-                    : 'Get started by configuring your profile.'}
-                </p>
-              </div>
+              {showOtpStep ? (
+                <>
+                  <div className="text-center space-y-1">
+                    <h2 className="font-display text-2xl font-black text-stone-900 dark:text-stone-50">
+                      Verify Your Email
+                    </h2>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      We sent a 6-digit verification code to <strong>{authEmail}</strong>. Enter it below to activate your account.
+                    </p>
+                  </div>
 
-              {/* Error messages */}
-              {authError && (
-                <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 text-xs md:text-sm">
-                  {authError}
-                </div>
-              )}
-
-              {/* Toggle controls */}
-              <div className="flex p-1 bg-white dark:bg-[#2A2A2A] rounded-xl border border-[#E5E5E5] dark:border-[#2A2A2A]">
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode('login'); setAuthError(''); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                    authMode === 'login'
-                      ? 'bg-[#141414] text-white dark:bg-white dark:text-black shadow-xs'
-                      : 'text-stone-500 dark:text-white/50'
-                  }`}
-                >
-                  Log In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode('register'); setAuthError(''); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                    authMode === 'register'
-                      ? 'bg-[#141414] text-white dark:bg-white dark:text-black shadow-xs'
-                      : 'text-stone-500 dark:text-white/50'
-                  }`}
-                >
-                  Register
-                </button>
-              </div>
-
-              {/* Auth Forms */}
-              <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-4">
-                {authMode === 'register' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Full Name</label>
-                    <div className="relative">
-                      <UserPlus className="absolute left-3.5 top-3 w-4.5 h-4.5 text-stone-400" />
-                      <input
-                        type="text"
-                        required
-                        placeholder="John Doe"
-                        value={authName}
-                        onChange={e => setAuthName(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
-                      />
+                  {/* Error messages */}
+                  {authError && (
+                    <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 text-xs md:text-sm">
+                      {authError}
                     </div>
-                  </div>
-                )}
+                  )}
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Email Address</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-3 w-4.5 h-4.5 text-stone-400" />
-                    <input
-                      type="email"
-                      required
-                      placeholder="student@example.com"
-                      value={authEmail}
-                      onChange={e => setAuthEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
-                    />
-                  </div>
-                </div>
+                  {/* OTP Submission Form */}
+                  <form onSubmit={handleVerifyOtp} className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-600 dark:text-stone-400">6-Digit OTP Code</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3.5 top-3.5 w-4.5 h-4.5 text-stone-400" />
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          placeholder="000000"
+                          value={otpCode}
+                          onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100 tracking-[0.5em] font-mono font-bold text-center text-lg"
+                        />
+                      </div>
+                    </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-3 w-4.5 h-4.5 text-stone-400" />
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={authPassword}
-                      onChange={e => setAuthPassword(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
-                    />
-                  </div>
-                </div>
+                    <button
+                      type="submit"
+                      disabled={authLoading}
+                      className="w-full py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#e0592b] text-white font-semibold transition-colors shadow-sm disabled:opacity-50 text-sm pt-3 cursor-pointer"
+                    >
+                      {authLoading ? 'Verifying OTP...' : 'Verify & Log In'}
+                    </button>
 
-                <button
-                  type="submit"
-                  disabled={authLoading}
-                  className="w-full py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#e0592b] text-white font-semibold transition-colors shadow-sm disabled:opacity-50 text-sm pt-3 cursor-pointer"
-                >
-                  {authLoading ? 'Signing in...' : authMode === 'login' ? 'Log In to Dashboard' : 'Create Account'}
-                </button>
-              </form>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOtpStep(false);
+                        setOtpCode('');
+                        setAuthError('');
+                      }}
+                      className="w-full text-center py-2 text-xs font-semibold text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 transition-colors"
+                    >
+                      Cancel and Back to Sign In
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <div className="text-center space-y-1">
+                    <h2 className="font-display text-2xl font-black text-stone-900 dark:text-stone-50">
+                      {authMode === 'login' ? 'Welcome Back!' : 'Create Your Account'}
+                    </h2>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      {authMode === 'login' 
+                        ? 'Enter your student credentials to log in.' 
+                        : 'Get started by configuring your profile.'}
+                    </p>
+                  </div>
+
+                  {/* Error messages */}
+                  {authError && (
+                    <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 text-xs md:text-sm">
+                      {authError}
+                    </div>
+                  )}
+
+                  {/* Toggle controls */}
+                  <div className="flex p-1 bg-white dark:bg-[#2A2A2A] rounded-xl border border-[#E5E5E5] dark:border-[#2A2A2A]">
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('login'); setAuthError(''); }}
+                      className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+                        authMode === 'login'
+                          ? 'bg-[#141414] text-white dark:bg-white dark:text-black shadow-xs'
+                          : 'text-stone-500 dark:text-white/50'
+                      }`}
+                    >
+                      Log In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('register'); setAuthError(''); }}
+                      className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+                        authMode === 'register'
+                          ? 'bg-[#141414] text-white dark:bg-white dark:text-black shadow-xs'
+                          : 'text-stone-500 dark:text-white/50'
+                      }`}
+                    >
+                      Register
+                    </button>
+                  </div>
+
+                  {/* Auth Forms */}
+                  <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-4">
+                    {authMode === 'register' && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Full Name</label>
+                        <div className="relative">
+                          <UserPlus className="absolute left-3.5 top-3 w-4.5 h-4.5 text-stone-400" />
+                          <input
+                            type="text"
+                            required
+                            placeholder="John Doe"
+                            value={authName}
+                            onChange={e => setAuthName(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Email Address</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3.5 top-3 w-4.5 h-4.5 text-stone-400" />
+                        <input
+                          type="email"
+                          required
+                          placeholder="student@example.com"
+                          value={authEmail}
+                          onChange={e => setAuthEmail(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3.5 top-3 w-4.5 h-4.5 text-stone-400" />
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={authPassword}
+                          onChange={e => setAuthPassword(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={authLoading}
+                      className="w-full py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#e0592b] text-white font-semibold transition-colors shadow-sm disabled:opacity-50 text-sm pt-3 cursor-pointer"
+                    >
+                      {authLoading ? 'Signing in...' : authMode === 'login' ? 'Log In to Dashboard' : 'Create Account'}
+                    </button>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         </div>
