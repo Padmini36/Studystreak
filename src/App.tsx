@@ -174,6 +174,32 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  // AUTOMATIC REMINDER CHECKER: Checks the clock every 60 seconds
+  useEffect(() => {
+    if (!reminders || !reminders.enabled) return;
+
+    const checkClock = () => {
+      const now = new Date();
+      // Formats browser time to match "HH:MM" (e.g., "13:41")
+      const currentBrowserTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      if (currentBrowserTime === reminders.time) {
+        if (Notification.permission === 'granted') {
+          new Notification("StudyStreak Reminder ⏰", {
+            body: "Time to Study! Let's keep your amazing streak going!",
+          });
+        }
+      }
+    };
+
+    checkClock();
+    const backgroundTimer = setInterval(checkClock, 60000);
+
+    return () => clearInterval(backgroundTimer);
+  }, [reminders]);
+
+  // Sync state modifications for goals & reminders with localStorage
+
   // Sync state modifications for goals & reminders with localStorage
   useEffect(() => {
     localStorage.setItem('study_streak_goals', JSON.stringify(goals));
