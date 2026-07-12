@@ -193,7 +193,7 @@ export default function App() {
     };
 
     checkClock();
-    const backgroundTimer = setInterval(checkClock, 60000);
+    const backgroundTimer = setInterval(checkClock, 10000);
 
     return () => clearInterval(backgroundTimer);
   }, [reminders]);
