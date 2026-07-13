@@ -119,16 +119,16 @@ export default function App() {
   // Auth state
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<Omit<User, 'passwordHash'> | null>(null);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [isLogin, setIsLogin] = useState<boolean>(true);
 
   // Auth fields
   const [authName, setAuthName] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [showOtpStep, setShowOtpStep] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
+  const [otpToken, setOtpToken] = useState('');
 
   // App core state
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -173,32 +173,6 @@ export default function App() {
       localStorage.setItem('study_streak_theme', 'light');
     }
   }, [isDarkMode]);
-
-  // AUTOMATIC REMINDER CHECKER: Checks the clock every 60 seconds
-  useEffect(() => {
-    if (!reminders || !reminders.enabled) return;
-
-    const checkClock = () => {
-      const now = new Date();
-      // Formats browser time to match "HH:MM" (e.g., "13:41")
-      const currentBrowserTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-      if (currentBrowserTime === reminders.time) {
-        if (Notification.permission === 'granted') {
-          new Notification("StudyStreak Reminder ⏰", {
-            body: "Time to Study! Let's keep your amazing streak going!",
-          });
-        }
-      }
-    };
-
-    checkClock();
-    const backgroundTimer = setInterval(checkClock, 10000);
-
-    return () => clearInterval(backgroundTimer);
-  }, [reminders]);
-
-  // Sync state modifications for goals & reminders with localStorage
 
   // Sync state modifications for goals & reminders with localStorage
   useEffect(() => {
@@ -255,6 +229,19 @@ export default function App() {
     try {
       const { data } = supabase.auth.onAuthStateChange((event, session) => {
         if (session) {
+          if (session.user && !session.user.email_confirmed_at) {
+            if (!isLogin) {
+              supabase.auth.signOut().catch(() => {});
+              setToken(null);
+              setUser(null);
+              setShowOtpStep(true);
+              return;
+            }
+            setToken(null);
+            setUser(null);
+            return;
+          }
+
           setToken(session.access_token);
           const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Student';
           setUser({
@@ -282,6 +269,18 @@ export default function App() {
     try {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session) {
+          if (session.user && !session.user.email_confirmed_at) {
+            if (!isLogin) {
+              supabase.auth.signOut().catch(() => {});
+              setToken(null);
+              setUser(null);
+              setShowOtpStep(true);
+              return;
+            }
+            setToken(null);
+            setUser(null);
+            return;
+          }
           setToken(session.access_token);
           const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Student';
           setUser({
@@ -318,7 +317,7 @@ export default function App() {
         subscription.unsubscribe();
       }
     };
-  }, [isUsingFallback]);
+  }, [isUsingFallback, isLogin]);
 
   // Fetch telemetry from study_sessions & study_plans tables for the logged-in user
   useEffect(() => {
@@ -433,20 +432,30 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (!authEmail.trim() || !authPassword.trim()) {
+    if (!email.trim() || !password.trim()) {
       setAuthError('Email and Password are required.');
       return;
     }
 
-    setAuthLoading(true);
+    setLoading(true);
     try {
       if (isUsingFallback || SUPABASE_URL.includes('placeholder-project')) {
         await new Promise(resolve => setTimeout(resolve, 300));
+        const savedAccountsStr = localStorage.getItem('fallback_accounts') || '{}';
+        const savedAccounts = JSON.parse(savedAccountsStr);
+        if (savedAccounts[email] && !savedAccounts[email].verified) {
+          setAuthError("Your email address is not verified yet. Please verify your account first.");
+          setToken(null);
+          setUser(null);
+          setShowOtpStep(true);
+          return;
+        }
+
         setToken('demo-token');
         setUser({
           id: 'demo-user-id',
-          email: authEmail,
-          name: authEmail.split('@')[0],
+          email: email,
+          name: savedAccounts[email]?.name || email.split('@')[0],
           currentStreak: 0,
           longestStreak: 0,
           profilePicture: '🦉'
@@ -457,8 +466,8 @@ export default function App() {
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password: authPassword
+        email: email,
+        password: password
       });
       if (error) throw error;
       setActiveTab('dashboard');
@@ -466,11 +475,20 @@ export default function App() {
       // If it is a network error, offer fallback
       if (err.message?.includes('fetch') || err.message?.includes('NetworkError')) {
         setIsUsingFallback(true);
+        const savedAccountsStr = localStorage.getItem('fallback_accounts') || '{}';
+        const savedAccounts = JSON.parse(savedAccountsStr);
+        if (savedAccounts[email] && !savedAccounts[email].verified) {
+          setAuthError("Your email address is not verified yet. Please verify your account first.");
+          setToken(null);
+          setUser(null);
+          setShowOtpStep(true);
+          return;
+        }
         setToken('demo-token');
         setUser({
           id: 'demo-user-id',
-          email: authEmail,
-          name: authEmail.split('@')[0],
+          email: email,
+          name: savedAccounts[email]?.name || email.split('@')[0],
           currentStreak: 0,
           longestStreak: 0,
           profilePicture: '🦉'
@@ -481,7 +499,7 @@ export default function App() {
         setAuthError(err.message || 'Invalid credentials. Please try again.');
       }
     } finally {
-      setAuthLoading(false);
+      setLoading(false);
     }
   };
 
@@ -489,22 +507,49 @@ export default function App() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (!authName.trim() || !authEmail.trim() || !authPassword.trim()) {
+    if (!authName.trim() || !email.trim() || !password.trim()) {
       setAuthError('All fields are required.');
       return;
     }
 
-    setAuthLoading(true);
+    setLoading(true);
     try {
       if (isUsingFallback || SUPABASE_URL.includes('placeholder-project')) {
         await new Promise(resolve => setTimeout(resolve, 300));
+        const savedAccountsStr = localStorage.getItem('fallback_accounts') || '{}';
+        const savedAccounts = JSON.parse(savedAccountsStr);
+        
+        // If the email is already registered and unverified, mimic the "already registered" behavior
+        if (savedAccounts[email]) {
+          if (!savedAccounts[email].verified) {
+            alert("This account is awaiting verification. Sending a new code now...");
+            setToken(null);
+            setUser(null);
+            setShowOtpStep(true);
+            return;
+          } else {
+            setAuthError("An account with this email already exists.");
+            return;
+          }
+        }
+        
+        // Save new unverified simulated account
+        savedAccounts[email] = {
+          name: authName,
+          password: password,
+          verified: false
+        };
+        localStorage.setItem('fallback_accounts', JSON.stringify(savedAccounts));
+
+        setToken(null);
+        setUser(null);
         setShowOtpStep(true);
         return;
       }
 
       const { data, error } = await supabase.auth.signUp({
-        email: authEmail,
-        password: authPassword,
+        email: email,
+        password: password,
         options: {
           data: {
             full_name: authName
@@ -512,37 +557,75 @@ export default function App() {
         }
       });
       if (error) throw error;
+      
+      // Ensure that if the email is not yet confirmed, we explicitly clear any local session states
+      if (data.user && !data.user.email_confirmed_at) {
+        setToken(null);
+        setUser(null);
+      }
       setShowOtpStep(true);
     } catch (err: any) {
+      const errMsg = err.message?.toLowerCase() || '';
       if (err.message?.includes('fetch') || err.message?.includes('NetworkError')) {
         setIsUsingFallback(true);
+        setToken(null);
+        setUser(null);
         setShowOtpStep(true);
+      } else if (errMsg.includes('already registered') || errMsg.includes('already exists') || errMsg.includes('already been registered')) {
+        try {
+          alert("This account is awaiting verification. Sending a new code now...");
+          await supabase.auth.resend({
+            type: 'signup',
+            email: email,
+          });
+          setToken(null);
+          setUser(null);
+          setShowOtpStep(true);
+        } catch (resendErr: any) {
+          setAuthError(`This account is awaiting verification, but we couldn't send a new code: ${resendErr.message}`);
+        }
       } else {
         setAuthError(err.message || 'Error registering account.');
       }
     } finally {
-      setAuthLoading(false);
+      setLoading(false);
     }
   };
 
   // REQUIREMENT: Handle OTP submission using supabase.auth.verifyOtp()
-  const handleVerifyOtp = async (e: React.FormEvent) => {
+  const handleVerifyRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+    if (!otpToken.trim() || otpToken.trim().length !== 6) {
       setAuthError('Please enter a valid 6-digit OTP code.');
       return;
     }
 
-    setAuthLoading(true);
+    setLoading(true);
     try {
       if (isUsingFallback || SUPABASE_URL.includes('placeholder-project')) {
         await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const savedAccountsStr = localStorage.getItem('fallback_accounts') || '{}';
+        const savedAccounts = JSON.parse(savedAccountsStr);
+        if (savedAccounts[email]) {
+          savedAccounts[email].verified = true;
+          localStorage.setItem('fallback_accounts', JSON.stringify(savedAccounts));
+        } else {
+          // If it somehow doesn't exist, create it as verified now
+          savedAccounts[email] = {
+            name: authName || email.split('@')[0],
+            password: password,
+            verified: true
+          };
+          localStorage.setItem('fallback_accounts', JSON.stringify(savedAccounts));
+        }
+
         setToken('demo-token');
         setUser({
           id: 'demo-user-id',
-          email: authEmail,
-          name: authName || authEmail.split('@')[0],
+          email: email,
+          name: savedAccounts[email]?.name || authName || email.split('@')[0],
           currentStreak: 0,
           longestStreak: 0,
           profilePicture: '🦉'
@@ -550,13 +633,13 @@ export default function App() {
         setActiveTab('dashboard');
         loadFallbackTelemetry();
         setShowOtpStep(false);
-        setOtpCode('');
+        setOtpToken('');
         return;
       }
 
       const { data, error } = await supabase.auth.verifyOtp({
-        email: authEmail,
-        token: otpCode,
+        email: email,
+        token: otpToken,
         type: 'signup'
       });
       if (error) throw error;
@@ -572,14 +655,16 @@ export default function App() {
           longestStreak: 0,
           profilePicture: '🦉'
         });
+        setActiveTab('dashboard');
+        setShowOtpStep(false);
+        setOtpToken('');
+      } else {
+        throw new Error('Verification succeeded but no session was returned. Please try logging in.');
       }
-      setActiveTab('dashboard');
-      setShowOtpStep(false);
-      setOtpCode('');
     } catch (err: any) {
       setAuthError(err.message || 'Verification failed. Please check the code and try again.');
     } finally {
-      setAuthLoading(false);
+      setLoading(false);
     }
   };
 
@@ -596,12 +681,12 @@ export default function App() {
     setPlans([]);
     setNotes([]);
     setStats(null);
-    setAuthEmail('');
-    setAuthPassword('');
+    setEmail('');
+    setPassword('');
     setAuthName('');
     setAuthError('');
     setShowOtpStep(false);
-    setOtpCode('');
+    setOtpToken('');
   };
 
   // STUDY SESSIONS CRUD with automatic duration_minutes calculation
@@ -938,7 +1023,7 @@ export default function App() {
     <div className="min-h-screen bg-[#F9F9F7] dark:bg-[#141414] text-[#1A1A1A] dark:text-[#F9F9F7] flex flex-col font-sans transition-all duration-200">
       
       {/* 1. AUTHENTICATION PAGES (LANDING / LOGIN) */}
-      {!token ? (
+      {!token || !user || showOtpStep ? (
         <div className="flex-1 flex flex-col md:flex-row min-h-screen">
           {/* Brand Left Column */}
           <div className="flex-1 bg-[#141414] text-[#F9F9F7] p-8 md:p-16 flex flex-col justify-between relative overflow-hidden">
@@ -992,7 +1077,7 @@ export default function App() {
                       Verify Your Email
                     </h2>
                     <p className="text-xs text-stone-500 dark:text-stone-400">
-                      We sent a 6-digit verification code to <strong>{authEmail}</strong>. Enter it below to activate your account.
+                      We sent a 6-digit verification code to <strong>{email}</strong>. Enter it below to activate your account.
                     </p>
                   </div>
 
@@ -1004,7 +1089,7 @@ export default function App() {
                   )}
 
                   {/* OTP Submission Form */}
-                  <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <form onSubmit={handleVerifyRegistration} className="space-y-4">
                     <div className="space-y-1">
                       <label className="text-xs font-bold text-stone-600 dark:text-stone-400">6-Digit OTP Code</label>
                       <div className="relative">
@@ -1014,8 +1099,8 @@ export default function App() {
                           required
                           maxLength={6}
                           placeholder="000000"
-                          value={otpCode}
-                          onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                          value={otpToken}
+                          onChange={e => setOtpToken(e.target.value.replace(/\D/g, ''))}
                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100 tracking-[0.5em] font-mono font-bold text-center text-lg"
                         />
                       </div>
@@ -1023,20 +1108,28 @@ export default function App() {
 
                     <button
                       type="submit"
-                      disabled={authLoading}
+                      disabled={loading}
                       className="w-full py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#e0592b] text-white font-semibold transition-colors shadow-sm disabled:opacity-50 text-sm pt-3 cursor-pointer"
                     >
-                      {authLoading ? 'Verifying OTP...' : 'Verify & Log In'}
+                      {loading ? 'Verifying...' : 'Verify Account'}
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
+                        try {
+                          await supabase.auth.signOut();
+                        } catch (err) {
+                          console.warn('Sign out during cancel failed:', err);
+                        }
+                        setToken(null);
+                        setUser(null);
                         setShowOtpStep(false);
-                        setOtpCode('');
+                        setOtpToken('');
                         setAuthError('');
+                        setIsLogin(true);
                       }}
-                      className="w-full text-center py-2 text-xs font-semibold text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 transition-colors"
+                      className="w-full text-center py-2 text-xs font-semibold text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 transition-colors cursor-pointer"
                     >
                       Cancel and Back to Sign In
                     </button>
@@ -1046,10 +1139,10 @@ export default function App() {
                 <>
                   <div className="text-center space-y-1">
                     <h2 className="font-display text-2xl font-black text-stone-900 dark:text-stone-50">
-                      {authMode === 'login' ? 'Welcome Back!' : 'Create Your Account'}
+                      {isLogin ? 'Welcome Back!' : 'Create Your Account'}
                     </h2>
                     <p className="text-xs text-stone-500 dark:text-stone-400">
-                      {authMode === 'login' 
+                      {isLogin 
                         ? 'Enter your student credentials to log in.' 
                         : 'Get started by configuring your profile.'}
                     </p>
@@ -1062,35 +1155,9 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Toggle controls */}
-                  <div className="flex p-1 bg-white dark:bg-[#2A2A2A] rounded-xl border border-[#E5E5E5] dark:border-[#2A2A2A]">
-                    <button
-                      type="button"
-                      onClick={() => { setAuthMode('login'); setAuthError(''); }}
-                      className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                        authMode === 'login'
-                          ? 'bg-[#141414] text-white dark:bg-white dark:text-black shadow-xs'
-                          : 'text-stone-500 dark:text-white/50'
-                      }`}
-                    >
-                      Log In
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAuthMode('register'); setAuthError(''); }}
-                      className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                        authMode === 'register'
-                          ? 'bg-[#141414] text-white dark:bg-white dark:text-black shadow-xs'
-                          : 'text-stone-500 dark:text-white/50'
-                      }`}
-                    >
-                      Register
-                    </button>
-                  </div>
-
                   {/* Auth Forms */}
-                  <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-4">
-                    {authMode === 'register' && (
+                  <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-4">
+                    {!isLogin && (
                       <div className="space-y-1">
                         <label className="text-xs font-bold text-stone-600 dark:text-stone-400">Full Name</label>
                         <div className="relative">
@@ -1115,8 +1182,8 @@ export default function App() {
                           type="email"
                           required
                           placeholder="student@example.com"
-                          value={authEmail}
-                          onChange={e => setAuthEmail(e.target.value)}
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
                         />
                       </div>
@@ -1130,8 +1197,8 @@ export default function App() {
                           type="password"
                           required
                           placeholder="••••••••"
-                          value={authPassword}
-                          onChange={e => setAuthPassword(e.target.value)}
+                          value={password}
+                          onChange={e => setPassword(e.target.value)}
                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 focus:outline-none focus:ring-2 focus:ring-[#FF6B35] text-sm text-stone-800 dark:text-stone-100"
                         />
                       </div>
@@ -1139,12 +1206,26 @@ export default function App() {
 
                     <button
                       type="submit"
-                      disabled={authLoading}
+                      disabled={loading}
                       className="w-full py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#e0592b] text-white font-semibold transition-colors shadow-sm disabled:opacity-50 text-sm pt-3 cursor-pointer"
                     >
-                      {authLoading ? 'Signing in...' : authMode === 'login' ? 'Log In to Dashboard' : 'Create Account'}
+                      {loading ? 'Please wait...' : isLogin ? 'Log In' : 'Create Account'}
                     </button>
                   </form>
+
+                  {/* Toggle Mode */}
+                  <div className="text-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsLogin(!isLogin);
+                        setAuthError('');
+                      }}
+                      className="text-xs font-semibold text-stone-600 hover:text-[#FF6B35] dark:text-stone-400 dark:hover:text-[#FF6B35] transition-colors cursor-pointer"
+                    >
+                      {isLogin ? "Don't have an account? Register" : 'Already have an account? Sign In'}
+                    </button>
+                  </div>
                 </>
               )}
             </div>
